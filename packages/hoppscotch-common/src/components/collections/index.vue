@@ -37,6 +37,7 @@
       @add-request="addRequest"
       @edit-collection="editCollection"
       @edit-folder="editFolder"
+      @duplicate-collection="duplicateCollection"
       @edit-properties="editProperties"
       @export-data="exportData"
       @remove-collection="removeCollection"
@@ -67,7 +68,8 @@
       "
       :filter-text="filterTexts"
       :export-loading="exportLoading"
-      :duplicate-loading="duplicateLoading"
+      :duplicate-request-loading="duplicateRequestLoading"
+      :duplicate-collection-loading="duplicateCollectionLoading"
       :save-request="saveRequest"
       :picked="picked"
       :collection-move-loading="collectionMoveLoading"
@@ -76,6 +78,7 @@
       @add-folder="addFolder"
       @edit-collection="editCollection"
       @edit-folder="editFolder"
+      @duplicate-collection="duplicateCollection"
       @edit-properties="editProperties"
       @export-data="exportData"
       @remove-collection="removeCollection"
@@ -113,6 +116,7 @@
     <CollectionsAddRequest
       :show="showModalAddRequest"
       :loading-state="modalLoadingState"
+      :request-context="requestContext"
       @add-request="onAddRequest"
       @hide-modal="displayModalAddRequest(false)"
     />
@@ -139,6 +143,7 @@
     <CollectionsEditRequest
       v-model="editingRequestName"
       :show="showModalEditRequest"
+      :request-context="editingRequest"
       :loading-state="modalLoadingState"
       @submit="updateEditingRequest"
       @hide-modal="displayModalEditRequest(false)"
@@ -208,6 +213,7 @@ import {
   createChildCollection,
   createNewRootCollection,
   deleteCollection,
+  duplicateTeamCollection,
   moveRESTTeamCollection,
   updateOrderRESTTeamCollection,
   updateTeamCollection,
@@ -240,6 +246,7 @@ import {
   addRESTCollection,
   addRESTFolder,
   cascadeParentCollectionForHeaderAuth,
+  duplicateRESTCollection,
   editRESTCollection,
   editRESTFolder,
   editRESTRequest,
@@ -645,7 +652,8 @@ const isSelected = ({
 
 const modalLoadingState = ref(false)
 const exportLoading = ref(false)
-const duplicateLoading = ref(false)
+const duplicateRequestLoading = ref(false)
+const duplicateCollectionLoading = ref(false)
 
 const showModalAdd = ref(false)
 const showModalAddRequest = ref(false)
@@ -782,6 +790,10 @@ const addRequest = (payload: {
   editingFolderPath.value = path
   displayModalAddRequest(true)
 }
+
+const requestContext = computed(() => {
+  return tabs.currentActiveTab.value.document.request
+})
 
 const onAddRequest = (requestName: string) => {
   const newRequest = {
@@ -1044,6 +1056,34 @@ const updateEditingFolder = (newName: string) => {
   }
 }
 
+const duplicateCollection = async ({
+  pathOrID,
+  collectionSyncID,
+}: {
+  pathOrID: string
+  collectionSyncID?: string
+}) => {
+  if (collectionsType.value.type === "my-collections") {
+    duplicateRESTCollection(pathOrID, collectionSyncID)
+  } else if (hasTeamWriteAccess.value) {
+    duplicateCollectionLoading.value = true
+
+    await pipe(
+      duplicateTeamCollection(pathOrID),
+      TE.match(
+        (err: GQLError<string>) => {
+          toast.error(`${getErrorMessage(err)}`)
+          duplicateCollectionLoading.value = false
+        },
+        () => {
+          toast.success(t("collection.duplicated"))
+          duplicateCollectionLoading.value = false
+        }
+      )
+    )()
+  }
+}
+
 const editRequest = (payload: {
   folderPath: string | undefined
   requestIndex: string
@@ -1149,7 +1189,7 @@ const duplicateRequest = (payload: {
     saveRESTRequestAs(folderPath, newRequest)
     toast.success(t("request.duplicated"))
   } else if (hasTeamWriteAccess.value) {
-    duplicateLoading.value = true
+    duplicateRequestLoading.value = true
 
     if (!collectionsType.value.selectedTeam) return
 
@@ -1164,10 +1204,10 @@ const duplicateRequest = (payload: {
       TE.match(
         (err: GQLError<string>) => {
           toast.error(`${getErrorMessage(err)}`)
-          duplicateLoading.value = false
+          duplicateRequestLoading.value = false
         },
         () => {
-          duplicateLoading.value = false
+          duplicateRequestLoading.value = false
           toast.success(t("request.duplicated"))
           displayModalAddRequest(false)
         }
